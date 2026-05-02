@@ -1,11 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone as tz
 from pytz import timezone
 from app.config import TIMEZONE
 
 
 def format_time(dt: datetime) -> str:
-    tz = timezone(TIMEZONE)
-    local_time = dt.astimezone(tz)
+    # If datetime is naive (no tzinfo), assume it's UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz.utc)
+    tz_local = timezone(TIMEZONE)
+    local_time = dt.astimezone(tz_local)
     return local_time.strftime("%H:%M")
 
 
@@ -18,6 +21,9 @@ def format_duration(seconds: float) -> str:
 
 
 def format_datetime(dt: datetime) -> str:
-    tz = timezone(TIMEZONE)
-    local_time = dt.astimezone(tz)
+    # If datetime is naive (no tzinfo), assume it's UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz.utc)
+    tz_local = timezone(TIMEZONE)
+    local_time = dt.astimezone(tz_local)
     return local_time.strftime("%d.%m.%Y %H:%M")
