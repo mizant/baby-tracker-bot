@@ -6,14 +6,15 @@ from sqlalchemy import select
 from datetime import datetime, timedelta
 from app.keyboards import get_feeding_menu, get_main_menu, get_cancel_keyboard
 from app.models import Feeding, Event
-from app.services.stats import get_feedings
-from app.services.formatters import format_time
+from app.services.stats import get_feedings, get_active_feeding_session
+from app.services.formatters import format_time, format_duration
 
 router = Router()
 
 
 class FeedingState(StatesGroup):
-    waiting_for_datetime = State()
+    waiting_for_start = State()
+    waiting_for_end = State()
 
 
 @router.callback_query(F.data == "feeding")
@@ -25,11 +26,18 @@ async def show_feeding_menu(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "feed_now")
-async def feed_now(callback: types.CallbackQuery, session: AsyncSession):
+@router.callback_query(F.data == "feeding_started")
+async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
+    # Check if there's already an active session
+    active_session = await get_active_feeding_session(session, callback.from_user.id)
+
+    if active_session:
+        await callback.answer("⚠️ Уже есть активная сессия кормления!", show_alert=True)
+        return
+
     feeding = Feeding(
         user_id=callback.from_user.id,
-        created_at=datetime.utcnow()
+        started_at=datetime.utcnow()
     )
     session.add(feeding)
     await session.flush()
@@ -43,15 +51,50 @@ async def feed_now(callback: types.CallbackQuery, session: AsyncSession):
     session.add(event)
     await session.commit()
 
-    # Get today's stats
+    await callback.message.edit_text(
+        f"🍼 Кормление началось в {format_time(feeding.started_at)}\n"
+        f"Нажмите 'Закончить кормление', когда закончите.",
+        reply_markup=get_feeding_menu()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "feeding_ended")
+async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
+    active_session = await get_active_feeding_session(session, callback.from_user.id)
+
+    if not active_session:
+        await callback.answer("⚠️ Нет активной сессии кормления! Сначала нажмите 'Начать кормление'.", show_alert=True)
+        return
+
+    active_session.ended_at = datetime.utcnow()
+    await session.commit()
+
+    # Record event
+    event = Event(
+        user_id=callback.from_user.id,
+        event_type="feeding",
+        record_id=active_session.id,
+        created_at=datetime.utcnow()
+    )
+    session.add(event)
+    await session.commit()
+
+    # Calculate duration
+    duration = (active_session.ended_at -
+                active_session.started_at).total_seconds()
+
+    # Get today's feeding stats
     today_start = datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     today_feedings = await get_feedings(session, callback.from_user.id, today_start, today_end)
-    count = len(today_feedings)
+    completed_feedings = [f for f in today_feedings if f.ended_at is not None]
+    count = len(completed_feedings)
 
     await callback.message.edit_text(
-        f"✅ Кормление записано в {format_time(feeding.created_at)}\n\n"
+        f"✅ Кормление завершено в {format_time(active_session.ended_at)}\n"
+        f"⏱️ Длительность: {format_duration(duration)}\n\n"
         f"📊 Сегодня:\n"
         f"• Кормлений: {count}",
         reply_markup=get_feeding_menu()
@@ -59,25 +102,24 @@ async def feed_now(callback: types.CallbackQuery, session: AsyncSession):
     await callback.answer()
 
 
-@router.callback_query(F.data == "feed_manual_time")
-async def feed_manual_time(callback: types.CallbackQuery, state: FSMContext):
-    await state.set_state(FeedingState.waiting_for_datetime)
+@router.callback_query(F.data == "feeding_manual")
+async def feeding_manual(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(FeedingState.waiting_for_start)
     await callback.message.edit_text(
-        "✏️ Введите время кормления в формате:\n"
+        "✏️ Введите время начала кормления:\n"
         "ЧЧ:ММ\n"
-        "(например: 14:30)",
+        "(например: 14:00)",
         reply_markup=get_cancel_keyboard()
     )
     await callback.answer()
 
 
-@router.message(FeedingState.waiting_for_datetime, F.text)
-async def manual_feeding_time(message: types.Message, session: AsyncSession, state: FSMContext):
+@router.message(FeedingState.waiting_for_start, F.text)
+async def process_feeding_start(message: types.Message, session: AsyncSession, state: FSMContext):
     try:
-        # Parse time: ЧЧ:ММ
         parts = message.text.strip().split(':')
         if len(parts) != 2:
-            await message.answer("❌ Неверный формат. Используйте: ЧЧ:ММ\nПример: 14:30")
+            await message.answer("❌ Неверный формат. Используйте: ЧЧ:ММ")
             return
 
         hour, minute = map(int, parts)
@@ -88,12 +130,53 @@ async def manual_feeding_time(message: types.Message, session: AsyncSession, sta
 
         # Create datetime with today's date and specified time
         now = datetime.utcnow()
-        feeding_time = now.replace(
+        start_time = now.replace(
             hour=hour, minute=minute, second=0, microsecond=0)
 
+        await state.update_data(start_time=start_time)
+        await state.set_state(FeedingState.waiting_for_end)
+
+        await message.answer(
+            "✅ Время начала записано.\n\n"
+            "Теперь введите время окончания:\n"
+            "ЧЧ:ММ",
+            reply_markup=get_cancel_keyboard()
+        )
+    except (ValueError, IndexError):
+        await message.answer("❌ Неверный формат. Используйте: ЧЧ:ММ")
+
+
+@router.message(FeedingState.waiting_for_end, F.text)
+async def process_feeding_end(message: types.Message, session: AsyncSession, state: FSMContext):
+    try:
+        parts = message.text.strip().split(':')
+        if len(parts) != 2:
+            await message.answer("❌ Неверный формат. Используйте: ЧЧ:ММ")
+            return
+
+        hour, minute = map(int, parts)
+
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            await message.answer("⚠️ Неверное время. Часы: 0-23, Минуты: 0-59")
+            return
+
+        # Create datetime with today's date and specified time
+        now = datetime.utcnow()
+        end_time = now.replace(hour=hour, minute=minute,
+                               second=0, microsecond=0)
+
+        data = await state.get_data()
+        start_time = data.get('start_time')
+
+        # If end time is before start time, assume it's next day
+        if end_time <= start_time:
+            end_time = end_time + timedelta(days=1)
+
+        # Create feeding session
         feeding = Feeding(
             user_id=message.from_user.id,
-            created_at=feeding_time
+            started_at=start_time,
+            ended_at=end_time
         )
         session.add(feeding)
         await session.flush()
@@ -107,24 +190,21 @@ async def manual_feeding_time(message: types.Message, session: AsyncSession, sta
         session.add(event)
         await session.commit()
 
+        # Calculate duration
+        duration = (end_time - start_time).total_seconds()
+
         await state.clear()
 
-        # Get today's stats
-        today_start = datetime.utcnow().replace(
-            hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        today_feedings = await get_feedings(session, message.from_user.id, today_start, today_end)
-        count = len(today_feedings)
-
         await message.answer(
-            f"✅ Кормление записано: {feeding_time.strftime('%H:%M')}\n\n"
-            f"📊 Сегодня:\n"
-            f"• Кормлений: {count}\n\n"
+            f"✅ Кормление записано:\n"
+            f"Начало: {start_time.strftime('%H:%M')}\n"
+            f"Конец: {end_time.strftime('%H:%M')}\n"
+            f"⏱️ Длительность: {format_duration(duration)}\n\n"
             f"Выберите действие:",
             reply_markup=get_main_menu()
         )
     except (ValueError, IndexError):
-        await message.answer("❌ Неверный формат. Используйте: ЧЧ:ММ\nПример: 14:30")
+        await message.answer("❌ Неверный формат. Используйте: ЧЧ:ММ")
 
 
 @router.callback_query(F.data == "feed_delete_last")
@@ -153,13 +233,21 @@ async def delete_last_feeding(callback: types.CallbackQuery, session: AsyncSessi
 
     if feeding:
         # Delete the feeding and event
+        start_time = format_time(feeding.started_at)
+        if feeding.ended_at:
+            end_time = format_time(feeding.ended_at)
+            duration = format_duration(
+                (feeding.ended_at - feeding.started_at).total_seconds())
+            deleted_info = f"Начало: {start_time}\nКонец: {end_time}\nДлительность: {duration}"
+        else:
+            deleted_info = f"Начало: {start_time}\n(активная сессия)"
+
         await session.delete(feeding)
         await session.delete(last_event)
         await session.commit()
 
         await callback.message.edit_text(
-            f"❌ Запись о кормлении удалена:\n"
-            f"Время: {format_time(feeding.created_at)}",
+            f"❌ Запись о кормлении удалена:\n\n{deleted_info}",
             reply_markup=get_feeding_menu()
         )
     else:

@@ -51,11 +51,16 @@ async def build_stats_message(session, user_id, start_date, end_date, period_nam
     # Feeding stats - show all feeding times
     message += "🍼 <b>Кормления</b>\n"
     if feeding_count > 0:
-        message += f"• Количество: {feeding_count}\n"
+        completed_feedings = [f for f in feedings if f.ended_at is not None]
+        message += f"• Количество: {len(completed_feedings)}\n"
         if detailed:
-            message += "• Время кормлений:\n"
-            for i, feeding in enumerate(feedings, 1):
-                message += f"  {i}. {format_time(feeding.created_at)}\n"
+            message += "• Периоды кормлений:\n"
+            for i, feeding in enumerate(completed_feedings, 1):
+                start = format_time(feeding.started_at)
+                end = format_time(feeding.ended_at)
+                duration = format_duration(
+                    (feeding.ended_at - feeding.started_at).total_seconds())
+                message += f"  {i}. {start} - {end} ({duration})\n"
     else:
         message += "• Еще нет записей\n"
 

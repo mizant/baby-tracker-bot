@@ -10,7 +10,8 @@ class Feeding(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
 
 
 class SleepSession(Base):

@@ -22,12 +22,16 @@ def get_main_menu() -> InlineKeyboardMarkup:
 def get_feeding_menu() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🕐 Кормление сейчас",
-                                 callback_data="feed_now")
+            InlineKeyboardButton(text="🍼 Начать кормление",
+                                 callback_data="feeding_started")
         ],
         [
-            InlineKeyboardButton(text="✏️ Ввести другое время",
-                                 callback_data="feed_manual_time")
+            InlineKeyboardButton(text="🛑 Закончить кормление",
+                                 callback_data="feeding_ended")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Ввести начало и конец кормления",
+                                 callback_data="feeding_manual")
         ],
         [
             InlineKeyboardButton(text="🗑️ Удалить последнее",

@@ -70,3 +70,16 @@ async def get_active_sleep_session(session: AsyncSession, user_id: int):
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def get_active_feeding_session(session: AsyncSession, user_id: int):
+    result = await session.execute(
+        select(Feeding)
+        .where(
+            Feeding.user_id == user_id,
+            Feeding.ended_at == None
+        )
+        .order_by(Feeding.started_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
