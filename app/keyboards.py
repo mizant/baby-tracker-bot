@@ -12,8 +12,7 @@ def get_main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="⚖️ Вес", callback_data="weight")
         ],
         [
-            InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
-            InlineKeyboardButton(text="↩️ Отменить", callback_data="undo")
+            InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
         ]
     ])
     return keyboard
@@ -36,6 +35,10 @@ def get_feeding_menu() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🗑️ Удалить последнее",
                                  callback_data="feed_delete_last")
+        ],
+        [
+            InlineKeyboardButton(text="📊 Статистика за сегодня",
+                                 callback_data="feeding_stats_today")
         ],
         [
             InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_menu")
@@ -72,6 +75,10 @@ def get_sleep_menu() -> InlineKeyboardMarkup:
                                  callback_data="sleep_delete_last")
         ],
         [
+            InlineKeyboardButton(text="📊 Статистика за сегодня",
+                                 callback_data="sleep_stats_today")
+        ],
+        [
             InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_menu")
         ]
     ])
@@ -92,6 +99,10 @@ def get_diaper_menu() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🗑️ Удалить последний",
                                  callback_data="diaper_delete_last")
+        ],
+        [
+            InlineKeyboardButton(text="📊 Статистика за сегодня",
+                                 callback_data="diaper_stats_today")
         ],
         [
             InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_menu")

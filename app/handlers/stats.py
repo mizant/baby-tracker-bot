@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytz
 from aiogram.exceptions import TelegramBadRequest
 from app.config import TIMEZONE, FAMILY_USER_ID
-from app.keyboards import get_stats_menu, get_main_menu
+from app.keyboards import get_stats_menu, get_main_menu, get_feeding_menu, get_sleep_menu, get_diaper_menu
 from app.services.stats import get_feedings, get_sleep_sessions, get_diapers, get_weights
 from app.services.formatters import format_time, format_duration, format_datetime
 
@@ -186,6 +186,125 @@ async def show_month_stats(callback: types.CallbackQuery, session: AsyncSession)
     await callback.message.edit_text(
         message,
         reply_markup=get_stats_menu(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "feeding_stats_today")
+async def show_feeding_today(callback: types.CallbackQuery, session: AsyncSession):
+    """Show today feeding stats only"""
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    start_date = now.replace(hour=0, minute=0, second=0,
+                             microsecond=0).astimezone(pytz.utc)
+    end_date = start_date + timedelta(days=1)
+
+    date_str = now.strftime("%d.%m.%Y")
+
+    # Get only feeding data
+    feedings = await get_feedings(session, FAMILY_USER_ID, start_date, end_date)
+    feeding_count = len([f for f in feedings if f.ended_at is not None])
+
+    message = f"🍼 <b>Кормления - Сегодня ({date_str})</b>\n\n"
+
+    if feeding_count > 0:
+        message += f"• Количество: {feeding_count}\n"
+        message += "• Периоды кормлений:\n"
+        for i, feeding in enumerate([f for f in feedings if f.ended_at], 1):
+            start = format_time(feeding.started_at)
+            end = format_time(feeding.ended_at)
+            duration = format_duration(
+                (feeding.ended_at - feeding.started_at).total_seconds())
+            message += f"  {i}. {start} - {end} ({duration})\n"
+    else:
+        message += "• Еще нет записей\n"
+
+    await callback.message.edit_text(
+        message,
+        reply_markup=get_feeding_menu(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "sleep_stats_today")
+async def show_sleep_today(callback: types.CallbackQuery, session: AsyncSession):
+    """Show today sleep stats only"""
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    start_date = now.replace(hour=0, minute=0, second=0,
+                             microsecond=0).astimezone(pytz.utc)
+    end_date = start_date + timedelta(days=1)
+
+    date_str = now.strftime("%d.%m.%Y")
+
+    # Get only sleep data
+    sessions = await get_sleep_sessions(session, FAMILY_USER_ID, start_date, end_date)
+    completed_sessions = [s for s in sessions if s.ended_at is not None]
+    total_sleep_seconds = sum(
+        (s.ended_at - s.started_at).total_seconds()
+        for s in completed_sessions
+    )
+
+    message = f"😴 <b>Сон - Сегодня ({date_str})</b>\n\n"
+
+    if completed_sessions:
+        message += f"• Периодов: {len(completed_sessions)}\n"
+        message += f"• Общее время: {format_duration(total_sleep_seconds)}\n"
+        message += "• Периоды сна:\n"
+        for i, sess in enumerate(completed_sessions, 1):
+            start = format_time(sess.started_at)
+            end = format_time(sess.ended_at)
+            duration = format_duration(
+                (sess.ended_at - sess.started_at).total_seconds())
+            message += f"  {i}. {start} - {end} ({duration})\n"
+    else:
+        message += "• Еще нет записей\n"
+
+    await callback.message.edit_text(
+        message,
+        reply_markup=get_sleep_menu(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "diaper_stats_today")
+async def show_diaper_today(callback: types.CallbackQuery, session: AsyncSession):
+    """Show today diaper stats only"""
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    start_date = now.replace(hour=0, minute=0, second=0,
+                             microsecond=0).astimezone(pytz.utc)
+    end_date = start_date + timedelta(days=1)
+
+    date_str = now.strftime("%d.%m.%Y")
+
+    # Get only diaper data
+    diapers = await get_diapers(session, FAMILY_USER_ID, start_date, end_date)
+    wet_count = sum(1 for d in diapers if d.diaper_type in ["wet", "both"])
+    dirty_count = sum(1 for d in diapers if d.diaper_type in ["dirty", "both"])
+
+    # Debug: check what diaper types we have
+    import logging
+    types_list = [d.diaper_type for d in diapers]
+    logging.info(f"Diaper types today: {types_list}")
+    logging.info(
+        f"Total: {len(diapers)}, Wet: {wet_count}, Dirty: {dirty_count}")
+
+    message = f"🧷 <b>Подгузники - Сегодня ({date_str})</b>\n\n"
+
+    if diapers:
+        message += f"• Мокрые: {wet_count}\n"
+        message += f"• Грязные: {dirty_count}\n"
+        message += f"• Всего: {len(diapers)}\n"
+    else:
+        message += "• Еще нет записей\n"
+
+    await callback.message.edit_text(
+        message,
+        reply_markup=get_diaper_menu(),
         parse_mode="HTML"
     )
     await callback.answer()

@@ -36,9 +36,14 @@ async def show_diaper_menu(callback: types.CallbackQuery, session: AsyncSession)
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("diaper_") & ~F.data.contains("delete"))
+@router.callback_query(F.data.startswith("diaper_") & ~F.data.contains("delete") & ~F.data.contains("stats"))
 async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
     diaper_type = callback.data.split("_")[1]
+
+    # Only allow valid diaper types
+    if diaper_type not in ["wet", "dirty", "both"]:
+        await callback.answer("⚠️ Неверный тип подгузника!", show_alert=True)
+        return
 
     diaper = Diaper(
         user_id=FAMILY_USER_ID,
