@@ -6,8 +6,9 @@ from sqlalchemy import select
 from datetime import datetime, timedelta
 from app.keyboards import get_sleep_menu, get_main_menu, get_cancel_keyboard
 from app.models import SleepSession, Event
-from app.services.stats import get_sleep_sessions, get_active_sleep_session
+from app.services.stats import get_sleep_sessions, get_active_sleep_session, get_last_sleep
 from app.services.formatters import format_time, format_duration
+from app.config import FAMILY_USER_ID
 
 router = Router()
 
@@ -18,9 +19,23 @@ class SleepState(StatesGroup):
 
 
 @router.callback_query(F.data == "sleep")
-async def show_sleep_menu(callback: types.CallbackQuery):
+async def show_sleep_menu(callback: types.CallbackQuery, session: AsyncSession):
+    # Get last sleep info
+    last_sleep = await get_last_sleep(session, FAMILY_USER_ID)
+    last_info = ""
+
+    if last_sleep:
+        if last_sleep.ended_at:
+            # Completed sleep
+            last_info = f"\n\n📋 Последний сон завершен в {format_time(last_sleep.ended_at)}"
+        else:
+            # Active sleep
+            last_info = f"\n\n🌙 Ребенок спит с {format_time(last_sleep.started_at)} (активная сессия)"
+    else:
+        last_info = "\n\n📋 Еще нет записей о сне"
+
     await callback.message.edit_text(
-        "😴 Отслеживание сна:",
+        f"😴 Отслеживание сна:{last_info}",
         reply_markup=get_sleep_menu()
     )
     await callback.answer()
@@ -29,21 +44,21 @@ async def show_sleep_menu(callback: types.CallbackQuery):
 @router.callback_query(F.data == "sleep_started")
 async def sleep_started(callback: types.CallbackQuery, session: AsyncSession):
     # Check if there's already an active session
-    active_session = await get_active_sleep_session(session, callback.from_user.id)
+    active_session = await get_active_sleep_session(session, FAMILY_USER_ID)
 
     if active_session:
         await callback.answer("⚠️ Уже есть активная сессия сна!", show_alert=True)
         return
 
     sleep_session = SleepSession(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         started_at=datetime.utcnow()
     )
     session.add(sleep_session)
     await session.flush()
 
     event = Event(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         event_type="sleep",
         record_id=sleep_session.id,
         created_at=datetime.utcnow()
@@ -61,7 +76,7 @@ async def sleep_started(callback: types.CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "sleep_ended")
 async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
-    active_session = await get_active_sleep_session(session, callback.from_user.id)
+    active_session = await get_active_sleep_session(session, FAMILY_USER_ID)
 
     if not active_session:
         await callback.answer("⚠️ Нет активной сессии сна! Сначала нажмите 'Ребенок уснул'.", show_alert=True)
@@ -72,7 +87,7 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
 
     # Record event
     event = Event(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         event_type="sleep",
         record_id=active_session.id,
         created_at=datetime.utcnow()
@@ -88,7 +103,7 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
     today_start = datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
-    today_sessions = await get_sleep_sessions(session, callback.from_user.id, today_start, today_end)
+    today_sessions = await get_sleep_sessions(session, FAMILY_USER_ID, today_start, today_end)
     total_duration = sum(
         (s.ended_at - s.started_at).total_seconds()
         for s in today_sessions
@@ -178,7 +193,7 @@ async def process_sleep_end(message: types.Message, session: AsyncSession, state
 
         # Create sleep session
         sleep_session = SleepSession(
-            user_id=message.from_user.id,
+            user_id=FAMILY_USER_ID,
             started_at=start_time,
             ended_at=end_time
         )
@@ -186,7 +201,7 @@ async def process_sleep_end(message: types.Message, session: AsyncSession, state
         await session.flush()
 
         event = Event(
-            user_id=message.from_user.id,
+            user_id=FAMILY_USER_ID,
             event_type="sleep",
             record_id=sleep_session.id,
             created_at=datetime.utcnow()
@@ -216,7 +231,7 @@ async def delete_last_sleep(callback: types.CallbackQuery, session: AsyncSession
     # Get the most recent sleep event for this user
     result = await session.execute(
         select(Event)
-        .where(Event.user_id == callback.from_user.id, Event.event_type == "sleep")
+        .where(Event.user_id == FAMILY_USER_ID, Event.event_type == "sleep")
         .order_by(Event.created_at.desc())
         .limit(1)
     )

@@ -6,8 +6,9 @@ from sqlalchemy import select
 from datetime import datetime
 from app.keyboards import get_main_menu, get_cancel_keyboard
 from app.models import Weight, Event
-from app.services.stats import get_weights
-from app.services.formatters import format_time
+from app.services.stats import get_weights, get_last_weight
+from app.services.formatters import format_time, format_datetime
+from app.config import FAMILY_USER_ID
 
 router = Router()
 
@@ -17,10 +18,19 @@ class WeightState(StatesGroup):
 
 
 @router.callback_query(F.data == "weight")
-async def request_weight(callback: types.CallbackQuery, state: FSMContext):
+async def request_weight(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession):
+    # Get last weight info
+    last_weight = await get_last_weight(session, FAMILY_USER_ID)
+    last_info = ""
+
+    if last_weight:
+        last_info = f"\n\n📋 Последний вес: {last_weight.weight_g:.0f} г ({format_datetime(last_weight.created_at)})"
+    else:
+        last_info = "\n\n📋 Еще нет записей о весе"
+
     await state.set_state(WeightState.waiting_for_weight)
     await callback.message.edit_text(
-        "⚖️ Введите вес ребенка в граммах (например: 3250):",
+        f"⚖️ Введите вес ребенка в граммах (например: 3250):{last_info}",
         reply_markup=get_cancel_keyboard()
     )
     await callback.answer()
@@ -31,13 +41,13 @@ async def process_weight(message: types.Message, session: AsyncSession, state: F
     weight_g = float(message.text)
 
     # Get previous weight
-    previous_weights = await get_weights(session, message.from_user.id, limit=2)
+    previous_weights = await get_weights(session, FAMILY_USER_ID, limit=2)
     previous_weight = previous_weights[1] if len(
         previous_weights) > 1 else None
 
     # Save new weight
     weight = Weight(
-        user_id=message.from_user.id,
+        user_id=FAMILY_USER_ID,
         weight_g=weight_g,
         created_at=datetime.utcnow()
     )
@@ -45,7 +55,7 @@ async def process_weight(message: types.Message, session: AsyncSession, state: F
     await session.flush()
 
     event = Event(
-        user_id=message.from_user.id,
+        user_id=FAMILY_USER_ID,
         event_type="weight",
         record_id=weight.id,
         created_at=datetime.utcnow()

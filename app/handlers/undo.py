@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 from app.keyboards import get_main_menu
 from app.models import Event, Feeding, SleepSession, Diaper, Weight
 from app.services.formatters import format_time
+from app.config import FAMILY_USER_ID
 
 router = Router()
 
 
 @router.callback_query(F.data == "undo")
 async def undo_last(callback: types.CallbackQuery, session: AsyncSession):
-    user_id = callback.from_user.id
+    user_id = FAMILY_USER_ID
 
     # Get the most recent event for this user
     result = await session.execute(
@@ -41,7 +42,9 @@ async def undo_last(callback: types.CallbackQuery, session: AsyncSession):
         result = await session.execute(select(Feeding).where(Feeding.id == record_id))
         feeding = result.scalar_one_or_none()
         if feeding:
-            deleted_info = f"🍼 Кормление: {feeding.volume_ml} мл в {format_time(feeding.created_at)}"
+            deleted_info = f"🍼 Кормление: {format_time(feeding.started_at)}"
+            if feeding.ended_at:
+                deleted_info += f" - {format_time(feeding.ended_at)}"
             await session.delete(feeding)
 
     elif record_type == "sleep":

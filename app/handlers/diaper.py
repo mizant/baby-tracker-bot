@@ -4,16 +4,33 @@ from sqlalchemy import select
 from datetime import datetime, timedelta
 from app.keyboards import get_diaper_menu, get_main_menu
 from app.models import Diaper, Event
-from app.services.stats import get_diapers
+from app.services.stats import get_diapers, get_last_diaper
 from app.services.formatters import format_time
+from app.config import FAMILY_USER_ID
 
 router = Router()
 
 
 @router.callback_query(F.data == "diaper")
-async def show_diaper_menu(callback: types.CallbackQuery):
+async def show_diaper_menu(callback: types.CallbackQuery, session: AsyncSession):
+    # Get last diaper info
+    last_diaper = await get_last_diaper(session, FAMILY_USER_ID)
+    last_info = ""
+
+    if last_diaper:
+        type_text = {
+            "wet": "💧 Мокрый",
+            "dirty": "💩 Грязный",
+            "both": "💧💩 Мокрый + грязный"
+        }
+        diaper_type = type_text.get(
+            last_diaper.diaper_type, last_diaper.diaper_type)
+        last_info = f"\n\n📋 Последний подгузник: {diaper_type} в {format_time(last_diaper.created_at)}"
+    else:
+        last_info = "\n\n📋 Еще нет записей о подгузниках"
+
     await callback.message.edit_text(
-        "🧷 Выберите тип подгузника:",
+        f"🧷 Выберите тип подгузника:{last_info}",
         reply_markup=get_diaper_menu()
     )
     await callback.answer()
@@ -24,7 +41,7 @@ async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
     diaper_type = callback.data.split("_")[1]
 
     diaper = Diaper(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         diaper_type=diaper_type,
         created_at=datetime.utcnow()
     )
@@ -32,7 +49,7 @@ async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
     await session.flush()
 
     event = Event(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         event_type="diaper",
         record_id=diaper.id,
         created_at=datetime.utcnow()
@@ -44,7 +61,7 @@ async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
     today_start = datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
-    today_diapers = await get_diapers(session, callback.from_user.id, today_start, today_end)
+    today_diapers = await get_diapers(session, FAMILY_USER_ID, today_start, today_end)
     wet_count = sum(
         1 for d in today_diapers if d.diaper_type in ["wet", "both"])
     dirty_count = sum(
@@ -77,7 +94,7 @@ async def delete_last_diaper(callback: types.CallbackQuery, session: AsyncSessio
     # Get the most recent diaper event for this user
     result = await session.execute(
         select(Event)
-        .where(Event.user_id == callback.from_user.id, Event.event_type == "diaper")
+        .where(Event.user_id == FAMILY_USER_ID, Event.event_type == "diaper")
         .order_by(Event.created_at.desc())
         .limit(1)
     )

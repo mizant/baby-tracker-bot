@@ -2,20 +2,25 @@ from aiogram import Router, types, F
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 import pytz
-from app.config import TIMEZONE
+from aiogram.exceptions import TelegramBadRequest
+from app.config import TIMEZONE, FAMILY_USER_ID
 from app.keyboards import get_stats_menu, get_main_menu
 from app.services.stats import get_feedings, get_sleep_sessions, get_diapers, get_weights
-from app.services.formatters import format_time, format_duration
+from app.services.formatters import format_time, format_duration, format_datetime
 
 router = Router()
 
 
 @router.callback_query(F.data == "stats")
 async def show_stats_menu_callback(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "📊 Выберите период статистики:",
-        reply_markup=get_stats_menu()
-    )
+    try:
+        await callback.message.edit_text(
+            "📊 Выберите период статистики:",
+            reply_markup=get_stats_menu()
+        )
+    except TelegramBadRequest:
+        # Message content hasn't changed, ignore error
+        pass
     await callback.answer()
 
 
@@ -98,11 +103,11 @@ async def build_stats_message(session, user_id, start_date, end_date, period_nam
     # Weight stats - simplified for today
     message += "⚖️ <b>Вес</b>\n"
     if last_weight:
-        if period_name == "Сегодня":
+        if period_name.startswith("Сегодня"):
             message += f"• Вес сегодня: {last_weight.weight_g:.0f} г\n"
         else:
             message += f"• Последняя запись: {last_weight.weight_g:.0f} г\n"
-            message += f"• Время: {format_time(last_weight.created_at)}\n"
+            message += f"• Дата: {format_datetime(last_weight.created_at)}\n"
     else:
         message += "• Еще нет записей\n"
 
@@ -120,7 +125,7 @@ async def show_today_stats(callback: types.CallbackQuery, session: AsyncSession)
     date_str = now.strftime("%d.%m.%Y")
     period_name = f"Сегодня ({date_str})"
 
-    message = await build_stats_message(session, callback.from_user.id, start_date, end_date, period_name)
+    message = await build_stats_message(session, FAMILY_USER_ID, start_date, end_date, period_name)
 
     await callback.message.edit_text(
         message,
@@ -142,7 +147,7 @@ async def show_yesterday_stats(callback: types.CallbackQuery, session: AsyncSess
     yesterday_date = (now - timedelta(days=1)).strftime("%d.%m.%Y")
     period_name = f"Вчера ({yesterday_date})"
 
-    message = await build_stats_message(session, callback.from_user.id, yesterday_start, yesterday_end, period_name)
+    message = await build_stats_message(session, FAMILY_USER_ID, yesterday_start, yesterday_end, period_name)
 
     await callback.message.edit_text(
         message,
@@ -159,7 +164,7 @@ async def show_week_stats(callback: types.CallbackQuery, session: AsyncSession):
     week_start = (now - timedelta(days=7)).replace(hour=0,
                                                    minute=0, second=0, microsecond=0).astimezone(pytz.utc)
 
-    message = await build_stats_message(session, callback.from_user.id, week_start, now.astimezone(pytz.utc), "За неделю", detailed=False)
+    message = await build_stats_message(session, FAMILY_USER_ID, week_start, now.astimezone(pytz.utc), "За неделю", detailed=False)
 
     await callback.message.edit_text(
         message,
@@ -176,7 +181,7 @@ async def show_month_stats(callback: types.CallbackQuery, session: AsyncSession)
     month_start = (now - timedelta(days=30)).replace(hour=0,
                                                      minute=0, second=0, microsecond=0).astimezone(pytz.utc)
 
-    message = await build_stats_message(session, callback.from_user.id, month_start, now.astimezone(pytz.utc), "За месяц", detailed=False)
+    message = await build_stats_message(session, FAMILY_USER_ID, month_start, now.astimezone(pytz.utc), "За месяц", detailed=False)
 
     await callback.message.edit_text(
         message,

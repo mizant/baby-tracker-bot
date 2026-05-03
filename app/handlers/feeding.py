@@ -6,8 +6,9 @@ from sqlalchemy import select
 from datetime import datetime, timedelta
 from app.keyboards import get_feeding_menu, get_main_menu, get_cancel_keyboard
 from app.models import Feeding, Event
-from app.services.stats import get_feedings, get_active_feeding_session
+from app.services.stats import get_feedings, get_active_feeding_session, get_last_feeding
 from app.services.formatters import format_time, format_duration
+from app.config import FAMILY_USER_ID
 
 router = Router()
 
@@ -18,9 +19,23 @@ class FeedingState(StatesGroup):
 
 
 @router.callback_query(F.data == "feeding")
-async def show_feeding_menu(callback: types.CallbackQuery):
+async def show_feeding_menu(callback: types.CallbackQuery, session: AsyncSession):
+    # Get last feeding info
+    last_feeding = await get_last_feeding(session, FAMILY_USER_ID)
+    last_info = ""
+
+    if last_feeding:
+        if last_feeding.ended_at:
+            # Completed feeding
+            last_info = f"\n\n📋 Последнее кормление завершено в {format_time(last_feeding.ended_at)}"
+        else:
+            # Active feeding
+            last_info = f"\n\n🔴 Кормление начато в {format_time(last_feeding.started_at)} (активное)"
+    else:
+        last_info = "\n\n📋 Еще нет записей о кормлении"
+
     await callback.message.edit_text(
-        "🍼 Выберите действие:",
+        f"🍼 Выберите действие:{last_info}",
         reply_markup=get_feeding_menu()
     )
     await callback.answer()
@@ -29,21 +44,21 @@ async def show_feeding_menu(callback: types.CallbackQuery):
 @router.callback_query(F.data == "feeding_started")
 async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
     # Check if there's already an active session
-    active_session = await get_active_feeding_session(session, callback.from_user.id)
+    active_session = await get_active_feeding_session(session, FAMILY_USER_ID)
 
     if active_session:
         await callback.answer("⚠️ Уже есть активная сессия кормления!", show_alert=True)
         return
 
     feeding = Feeding(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         started_at=datetime.utcnow()
     )
     session.add(feeding)
     await session.flush()
 
     event = Event(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         event_type="feeding",
         record_id=feeding.id,
         created_at=datetime.utcnow()
@@ -61,7 +76,7 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "feeding_ended")
 async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
-    active_session = await get_active_feeding_session(session, callback.from_user.id)
+    active_session = await get_active_feeding_session(session, FAMILY_USER_ID)
 
     if not active_session:
         await callback.answer("⚠️ Нет активной сессии кормления! Сначала нажмите 'Начать кормление'.", show_alert=True)
@@ -72,7 +87,7 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
 
     # Record event
     event = Event(
-        user_id=callback.from_user.id,
+        user_id=FAMILY_USER_ID,
         event_type="feeding",
         record_id=active_session.id,
         created_at=datetime.utcnow()
@@ -88,7 +103,7 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
     today_start = datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
-    today_feedings = await get_feedings(session, callback.from_user.id, today_start, today_end)
+    today_feedings = await get_feedings(session, FAMILY_USER_ID, today_start, today_end)
     completed_feedings = [f for f in today_feedings if f.ended_at is not None]
     count = len(completed_feedings)
 
@@ -174,7 +189,7 @@ async def process_feeding_end(message: types.Message, session: AsyncSession, sta
 
         # Create feeding session
         feeding = Feeding(
-            user_id=message.from_user.id,
+            user_id=FAMILY_USER_ID,
             started_at=start_time,
             ended_at=end_time
         )
@@ -182,7 +197,7 @@ async def process_feeding_end(message: types.Message, session: AsyncSession, sta
         await session.flush()
 
         event = Event(
-            user_id=message.from_user.id,
+            user_id=FAMILY_USER_ID,
             event_type="feeding",
             record_id=feeding.id,
             created_at=datetime.utcnow()
@@ -212,7 +227,7 @@ async def delete_last_feeding(callback: types.CallbackQuery, session: AsyncSessi
     # Get the most recent feeding event for this user
     result = await session.execute(
         select(Event)
-        .where(Event.user_id == callback.from_user.id, Event.event_type == "feeding")
+        .where(Event.user_id == FAMILY_USER_ID, Event.event_type == "feeding")
         .order_by(Event.created_at.desc())
         .limit(1)
     )
