@@ -1,6 +1,8 @@
 from aiogram import Router, types, F
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
+import pytz
+from app.config import TIMEZONE
 from app.keyboards import get_stats_menu, get_main_menu
 from app.services.stats import get_feedings, get_sleep_sessions, get_diapers, get_weights
 from app.services.formatters import format_time, format_duration
@@ -17,7 +19,7 @@ async def show_stats_menu_callback(callback: types.CallbackQuery):
     await callback.answer()
 
 
-async def build_stats_message(session, user_id, start_date, end_date, period_name):
+async def build_stats_message(session, user_id, start_date, end_date, period_name, detailed=True):
     from app.models import Feeding, SleepSession, Diaper, Weight
     from sqlalchemy import select
 
@@ -50,9 +52,10 @@ async def build_stats_message(session, user_id, start_date, end_date, period_nam
     message += "🍼 <b>Кормления</b>\n"
     if feeding_count > 0:
         message += f"• Количество: {feeding_count}\n"
-        message += "• Время кормлений:\n"
-        for i, feeding in enumerate(feedings, 1):
-            message += f"  {i}. {format_time(feeding.created_at)}\n"
+        if detailed:
+            message += "• Время кормлений:\n"
+            for i, feeding in enumerate(feedings, 1):
+                message += f"  {i}. {format_time(feeding.created_at)}\n"
     else:
         message += "• Еще нет записей\n"
 
@@ -63,13 +66,14 @@ async def build_stats_message(session, user_id, start_date, end_date, period_nam
     if completed_sessions:
         message += f"• Периодов: {len(completed_sessions)}\n"
         message += f"• Общее время: {format_duration(total_sleep_seconds)}\n"
-        message += "• Периоды сна:\n"
-        for i, session in enumerate(completed_sessions, 1):
-            start = format_time(session.started_at)
-            end = format_time(session.ended_at)
-            duration = format_duration(
-                (session.ended_at - session.started_at).total_seconds())
-            message += f"  {i}. {start} - {end} ({duration})\n"
+        if detailed:
+            message += "• Периоды сна:\n"
+            for i, session in enumerate(completed_sessions, 1):
+                start = format_time(session.started_at)
+                end = format_time(session.ended_at)
+                duration = format_duration(
+                    (session.ended_at - session.started_at).total_seconds())
+                message += f"  {i}. {start} - {end} ({duration})\n"
     else:
         message += "• Еще нет записей\n"
 
@@ -102,11 +106,16 @@ async def build_stats_message(session, user_id, start_date, end_date, period_nam
 
 @router.callback_query(F.data == "stats_today")
 async def show_today_stats(callback: types.CallbackQuery, session: AsyncSession):
-    now = datetime.utcnow()
-    start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    start_date = now.replace(hour=0, minute=0, second=0,
+                             microsecond=0).astimezone(pytz.utc)
     end_date = start_date + timedelta(days=1)
 
-    message = await build_stats_message(session, callback.from_user.id, start_date, end_date, "Сегодня")
+    date_str = now.strftime("%d.%m.%Y")
+    period_name = f"Сегодня ({date_str})"
+
+    message = await build_stats_message(session, callback.from_user.id, start_date, end_date, period_name)
 
     await callback.message.edit_text(
         message,
@@ -118,12 +127,17 @@ async def show_today_stats(callback: types.CallbackQuery, session: AsyncSession)
 
 @router.callback_query(F.data == "stats_yesterday")
 async def show_yesterday_stats(callback: types.CallbackQuery, session: AsyncSession):
-    now = datetime.utcnow()
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
     yesterday_start = (now - timedelta(days=1)).replace(hour=0,
-                                                        minute=0, second=0, microsecond=0)
-    yesterday_end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                                                        minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+    yesterday_end = now.replace(
+        hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
 
-    message = await build_stats_message(session, callback.from_user.id, yesterday_start, yesterday_end, "Вчера")
+    yesterday_date = (now - timedelta(days=1)).strftime("%d.%m.%Y")
+    period_name = f"Вчера ({yesterday_date})"
+
+    message = await build_stats_message(session, callback.from_user.id, yesterday_start, yesterday_end, period_name)
 
     await callback.message.edit_text(
         message,
@@ -135,11 +149,12 @@ async def show_yesterday_stats(callback: types.CallbackQuery, session: AsyncSess
 
 @router.callback_query(F.data == "stats_week")
 async def show_week_stats(callback: types.CallbackQuery, session: AsyncSession):
-    now = datetime.utcnow()
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
     week_start = (now - timedelta(days=7)).replace(hour=0,
-                                                   minute=0, second=0, microsecond=0)
+                                                   minute=0, second=0, microsecond=0).astimezone(pytz.utc)
 
-    message = await build_stats_message(session, callback.from_user.id, week_start, now, "За неделю")
+    message = await build_stats_message(session, callback.from_user.id, week_start, now.astimezone(pytz.utc), "За неделю", detailed=False)
 
     await callback.message.edit_text(
         message,
@@ -151,11 +166,12 @@ async def show_week_stats(callback: types.CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "stats_month")
 async def show_month_stats(callback: types.CallbackQuery, session: AsyncSession):
-    now = datetime.utcnow()
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
     month_start = (now - timedelta(days=30)).replace(hour=0,
-                                                     minute=0, second=0, microsecond=0)
+                                                     minute=0, second=0, microsecond=0).astimezone(pytz.utc)
 
-    message = await build_stats_message(session, callback.from_user.id, month_start, now, "За месяц")
+    message = await build_stats_message(session, callback.from_user.id, month_start, now.astimezone(pytz.utc), "За месяц", detailed=False)
 
     await callback.message.edit_text(
         message,
