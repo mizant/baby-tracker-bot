@@ -10,11 +10,11 @@ async def get_feedings(session: AsyncSession, user_id: int, start_date: datetime
         .where(
             and_(
                 Feeding.user_id == user_id,
-                Feeding.created_at >= start_date,
-                Feeding.created_at < end_date
+                Feeding.started_at >= start_date,
+                Feeding.started_at < end_date
             )
         )
-        .order_by(Feeding.created_at.desc())
+        .order_by(Feeding.started_at.desc())
     )
     return result.scalars().all()
 
