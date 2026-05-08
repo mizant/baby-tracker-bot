@@ -129,6 +129,10 @@ def get_stats_menu() -> InlineKeyboardMarkup:
                                  callback_data="stats_month")
         ],
         [
+            InlineKeyboardButton(text="📈 График веса",
+                                 callback_data="weight_chart")
+        ],
+        [
             InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_menu")
         ]
     ])

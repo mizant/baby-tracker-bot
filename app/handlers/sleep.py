@@ -3,7 +3,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as tz
+from pytz import timezone
+from app.config import TIMEZONE
 from app.keyboards import get_sleep_menu, get_main_menu, get_cancel_keyboard
 from app.models import SleepSession, Event
 from app.services.stats import get_sleep_sessions, get_active_sleep_session, get_last_sleep
@@ -52,7 +54,7 @@ async def sleep_started(callback: types.CallbackQuery, session: AsyncSession):
 
     sleep_session = SleepSession(
         user_id=FAMILY_USER_ID,
-        started_at=datetime.utcnow()
+        started_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(sleep_session)
     await session.flush()
@@ -61,7 +63,7 @@ async def sleep_started(callback: types.CallbackQuery, session: AsyncSession):
         user_id=FAMILY_USER_ID,
         event_type="sleep",
         record_id=sleep_session.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(event)
     await session.commit()
@@ -82,7 +84,7 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
         await callback.answer("⚠️ Нет активной сессии сна! Сначала нажмите 'Ребенок уснул'.", show_alert=True)
         return
 
-    active_session.ended_at = datetime.utcnow()
+    active_session.ended_at = datetime.now(timezone(TIMEZONE))
     await session.commit()
 
     # Record event
@@ -90,7 +92,7 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
         user_id=FAMILY_USER_ID,
         event_type="sleep",
         record_id=active_session.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(event)
     await session.commit()
@@ -100,8 +102,9 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
                 active_session.started_at).total_seconds()
 
     # Get today's sleep stats
-    today_start = datetime.utcnow().replace(
-        hour=0, minute=0, second=0, microsecond=0)
+    tz_local = timezone(TIMEZONE)
+    now = datetime.now(tz_local)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     today_sessions = await get_sleep_sessions(session, FAMILY_USER_ID, today_start, today_end)
     total_duration = sum(
@@ -147,7 +150,7 @@ async def process_sleep_start(message: types.Message, session: AsyncSession, sta
             await message.answer("⚠️ Неверное время. Часы: 0-23, Минуты: 0-59")
             return
 
-        # Create datetime with today's date and specified time
+        # Create datetime with today's date and specified time (naive datetime, interpreted as local time)
         now = datetime.utcnow()
         start_time = now.replace(
             hour=hour, minute=minute, second=0, microsecond=0)
@@ -179,7 +182,7 @@ async def process_sleep_end(message: types.Message, session: AsyncSession, state
             await message.answer("⚠️ Неверное время. Часы: 0-23, Минуты: 0-59")
             return
 
-        # Create datetime with today's date and specified time
+        # Create datetime with today's date and specified time (naive datetime, interpreted as local time)
         now = datetime.utcnow()
         end_time = now.replace(hour=hour, minute=minute,
                                second=0, microsecond=0)

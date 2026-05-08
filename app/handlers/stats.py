@@ -7,6 +7,7 @@ from app.config import TIMEZONE, FAMILY_USER_ID
 from app.keyboards import get_stats_menu, get_main_menu, get_feeding_menu, get_sleep_menu, get_diaper_menu
 from app.services.stats import get_feedings, get_sleep_sessions, get_diapers, get_weights
 from app.services.formatters import format_time, format_duration, format_datetime
+from app.services.weight_chart import create_weight_chart
 
 router = Router()
 
@@ -307,4 +308,48 @@ async def show_diaper_today(callback: types.CallbackQuery, session: AsyncSession
         reply_markup=get_diaper_menu(),
         parse_mode="HTML"
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "weight_chart")
+async def show_weight_chart(callback: types.CallbackQuery, session: AsyncSession):
+    """Show weight change chart over time"""
+    # Get all weights to check if we have enough data
+    all_weights = await get_weights(session, FAMILY_USER_ID, limit=1000)
+
+    if not all_weights or len(all_weights) < 2:
+        await callback.answer("❌ Нужно минимум 2 записи веса для построения графика", show_alert=True)
+        return
+
+    chart_file = await create_weight_chart(session, FAMILY_USER_ID)
+
+    if not chart_file:
+        await callback.answer("❌ Ошибка при создании графика", show_alert=True)
+        return
+
+    # Build caption
+    first_weight = all_weights[-1]  # Oldest
+    last_weight = all_weights[0]    # Newest
+    diff = last_weight.weight_g - first_weight.weight_g
+
+    caption = f"📊 <b>График изменения веса</b>\n\n"
+    caption += f"📈 <b>Всего записей:</b> {len(all_weights)}\n"
+    caption += f"📅 <b>Первая запись:</b> {format_datetime(first_weight.created_at)}\n"
+    caption += f"📅 <b>Последняя запись:</b> {format_datetime(last_weight.created_at)}\n\n"
+    caption += f"⚖️ <b>Изменение:</b> "
+
+    if diff > 0:
+        caption += f"+{diff:.0f} г (набор веса)"
+    elif diff < 0:
+        caption += f"{diff:.0f} г (потеря веса)"
+    else:
+        caption += "без изменений"
+
+    await callback.message.answer_photo(
+        photo=chart_file,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=get_stats_menu()
+    )
+
     await callback.answer()

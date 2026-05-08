@@ -4,6 +4,8 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta
+from pytz import timezone
+from app.config import TIMEZONE
 from app.keyboards import get_feeding_menu, get_main_menu, get_cancel_keyboard
 from app.models import Feeding, Event
 from app.services.stats import get_feedings, get_active_feeding_session, get_last_feeding
@@ -52,7 +54,7 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
 
     feeding = Feeding(
         user_id=FAMILY_USER_ID,
-        started_at=datetime.utcnow()
+        started_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(feeding)
     await session.flush()
@@ -61,7 +63,7 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
         user_id=FAMILY_USER_ID,
         event_type="feeding",
         record_id=feeding.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(event)
     await session.commit()
@@ -82,7 +84,7 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
         await callback.answer("⚠️ Нет активной сессии кормления! Сначала нажмите 'Начать кормление'.", show_alert=True)
         return
 
-    active_session.ended_at = datetime.utcnow()
+    active_session.ended_at = datetime.now(timezone(TIMEZONE))
     await session.commit()
 
     # Record event
@@ -90,7 +92,7 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
         user_id=FAMILY_USER_ID,
         event_type="feeding",
         record_id=active_session.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(event)
     await session.commit()
@@ -100,8 +102,9 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
                 active_session.started_at).total_seconds()
 
     # Get today's feeding stats
-    today_start = datetime.utcnow().replace(
-        hour=0, minute=0, second=0, microsecond=0)
+    tz_local = timezone(TIMEZONE)
+    now = datetime.now(tz_local)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     today_feedings = await get_feedings(session, FAMILY_USER_ID, today_start, today_end)
     completed_feedings = [f for f in today_feedings if f.ended_at is not None]
@@ -143,7 +146,7 @@ async def process_feeding_start(message: types.Message, session: AsyncSession, s
             await message.answer("⚠️ Неверное время. Часы: 0-23, Минуты: 0-59")
             return
 
-        # Create datetime with today's date and specified time
+        # Create datetime with today's date and specified time (naive datetime, interpreted as local time)
         now = datetime.utcnow()
         start_time = now.replace(
             hour=hour, minute=minute, second=0, microsecond=0)
@@ -175,7 +178,7 @@ async def process_feeding_end(message: types.Message, session: AsyncSession, sta
             await message.answer("⚠️ Неверное время. Часы: 0-23, Минуты: 0-59")
             return
 
-        # Create datetime with today's date and specified time
+        # Create datetime with today's date and specified time (naive datetime, interpreted as local time)
         now = datetime.utcnow()
         end_time = now.replace(hour=hour, minute=minute,
                                second=0, microsecond=0)

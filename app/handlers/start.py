@@ -23,18 +23,32 @@ async def command_start(message: types.Message):
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
-        "👋 Выберите действие:",
-        reply_markup=get_main_menu()
-    )
+    try:
+        await callback.message.edit_text(
+            "👋 Выберите действие:",
+            reply_markup=get_main_menu()
+        )
+    except Exception:
+        # If editing fails (e.g., photo message), send a new message instead
+        await callback.message.answer(
+            "👋 Выберите действие:",
+            reply_markup=get_main_menu()
+        )
     await callback.answer()
 
 
 @router.callback_query(F.data == "cancel")
 async def cancel_action(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
-        "❌ Ввод отменен.",
-        reply_markup=get_main_menu()
-    )
+    try:
+        await callback.message.edit_text(
+            "❌ Ввод отменен.",
+            reply_markup=get_main_menu()
+        )
+    except Exception:
+        # If editing fails (e.g., photo message), send a new message instead
+        await callback.message.answer(
+            "❌ Ввод отменен.",
+            reply_markup=get_main_menu()
+        )
     await callback.answer()

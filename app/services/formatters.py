@@ -4,9 +4,10 @@ from app.config import TIMEZONE
 
 
 def format_time(dt: datetime) -> str:
-    # If datetime is naive (no tzinfo), assume it's UTC
+    # If datetime is naive (no tzinfo), assume it's local time (manual entry)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=tz.utc)
+        return dt.strftime("%H:%M")
+    # If datetime has tzinfo (UTC), convert to local timezone
     tz_local = timezone(TIMEZONE)
     local_time = dt.astimezone(tz_local)
     return local_time.strftime("%H:%M")
@@ -21,9 +22,10 @@ def format_duration(seconds: float) -> str:
 
 
 def format_datetime(dt: datetime) -> str:
-    # If datetime is naive (no tzinfo), assume it's UTC
+    # If datetime is naive (no tzinfo), it's already local time - just format it
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=tz.utc)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    # If datetime has tzinfo, convert to local timezone
     tz_local = timezone(TIMEZONE)
     local_time = dt.astimezone(tz_local)
     return local_time.strftime("%d.%m.%Y %H:%M")
@@ -31,9 +33,10 @@ def format_datetime(dt: datetime) -> str:
 
 def format_datetime_full(dt: datetime) -> str:
     """Format date and time with full date display"""
-    # If datetime is naive (no tzinfo), assume it's UTC
+    # If datetime is naive (no tzinfo), it's already local time - just format it
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=tz.utc)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    # If datetime has tzinfo, convert to local timezone
     tz_local = timezone(TIMEZONE)
     local_time = dt.astimezone(tz_local)
     return local_time.strftime("%d.%m.%Y %H:%M")
