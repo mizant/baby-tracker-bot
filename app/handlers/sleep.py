@@ -97,9 +97,17 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
     session.add(event)
     await session.commit()
 
-    # Calculate duration
-    duration = (active_session.ended_at -
-                active_session.started_at).total_seconds()
+    # Calculate duration - ensure both datetimes have the same timezone awareness
+    ended_at = active_session.ended_at
+    started_at = active_session.started_at
+
+    # If one has tzinfo and the other doesn't, normalize them
+    if ended_at.tzinfo is not None and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=ended_at.tzinfo)
+    elif ended_at.tzinfo is None and started_at.tzinfo is not None:
+        ended_at = ended_at.replace(tzinfo=started_at.tzinfo)
+
+    duration = (ended_at - started_at).total_seconds()
 
     # Get today's sleep stats
     tz_local = timezone(TIMEZONE)

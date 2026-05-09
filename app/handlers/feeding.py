@@ -46,7 +46,17 @@ async def show_feeding_menu(callback: types.CallbackQuery, session: AsyncSession
 @router.callback_query(F.data == "feeding_started")
 async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
     # Check if there's already an active session
+    import logging
+    logging.info(f"=== FEEDING STARTED ===")
+    logging.info(
+        f"Checking for active feeding session for user {FAMILY_USER_ID}")
+
     active_session = await get_active_feeding_session(session, FAMILY_USER_ID)
+
+    logging.info(f"Active session found: {active_session}")
+    if active_session:
+        logging.info(f"  started_at: {active_session.started_at}")
+        logging.info(f"  ended_at: {active_session.ended_at}")
 
     if active_session:
         await callback.answer("⚠️ Уже есть активная сессия кормления!", show_alert=True)
@@ -59,6 +69,10 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
     session.add(feeding)
     await session.flush()
 
+    logging.info(f"Created new feeding session with id={feeding.id}")
+    logging.info(
+        f"  started_at: {feeding.started_at} (tzinfo: {feeding.started_at.tzinfo})")
+
     event = Event(
         user_id=FAMILY_USER_ID,
         event_type="feeding",
@@ -67,6 +81,8 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
     )
     session.add(event)
     await session.commit()
+
+    logging.info(f"Feeding session saved successfully")
 
     await callback.message.edit_text(
         f"🍼 Кормление началось в {format_time(feeding.started_at)}\n"
@@ -78,18 +94,35 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "feeding_ended")
 async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
-    active_session = await get_active_feeding_session(session, FAMILY_USER_ID)
-
-    # Debug logging
     import logging
+    logging.info(f"=== FEEDING ENDED ===")
     logging.info(
         f"Looking for active feeding session for user {FAMILY_USER_ID}")
+
+    active_session = await get_active_feeding_session(session, FAMILY_USER_ID)
+
     logging.info(f"Active session found: {active_session}")
     if active_session:
         logging.info(
-            f"Session started_at: {active_session.started_at}, ended_at: {active_session.ended_at}")
+            f"  started_at: {active_session.started_at} (tzinfo: {active_session.started_at.tzinfo})")
+        logging.info(f"  ended_at: {active_session.ended_at}")
 
     if not active_session:
+        # Debug: check all feedings to see what's in the DB
+        from sqlalchemy import select
+        from app.models import Feeding
+        result = await session.execute(
+            select(Feeding)
+            .where(Feeding.user_id == FAMILY_USER_ID)
+            .order_by(Feeding.started_at.desc())
+            .limit(5)
+        )
+        recent_feedings = result.scalars().all()
+        logging.info(f"Last 5 feedings in DB:")
+        for f in recent_feedings:
+            logging.info(
+                f"  id={f.id}, started_at={f.started_at} (tzinfo: {f.started_at.tzinfo}), ended_at={f.ended_at}")
+
         await callback.answer("⚠️ Нет активной сессии кормления! Сначала нажмите 'Начать кормление'.", show_alert=True)
         return
 
@@ -106,9 +139,17 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
     session.add(event)
     await session.commit()
 
-    # Calculate duration
-    duration = (active_session.ended_at -
-                active_session.started_at).total_seconds()
+    # Calculate duration - ensure both datetimes have the same timezone awareness
+    ended_at = active_session.ended_at
+    started_at = active_session.started_at
+
+    # If one has tzinfo and the other doesn't, normalize them
+    if ended_at.tzinfo is not None and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=ended_at.tzinfo)
+    elif ended_at.tzinfo is None and started_at.tzinfo is not None:
+        ended_at = ended_at.replace(tzinfo=started_at.tzinfo)
+
+    duration = (ended_at - started_at).total_seconds()
 
     # Get today's feeding stats
     tz_local = timezone(TIMEZONE)
