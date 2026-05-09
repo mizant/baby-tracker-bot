@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 
 from app.config import BOT_TOKEN
 from app.db import init_db, get_session
-from app.handlers import start, feeding, sleep, diaper, weight, stats, undo
+from app.handlers import start, feeding, sleep, diaper, weight, stats, undo, now
 
 # Configure logging
 logging.basicConfig(
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 async def set_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="now", description="Статус прямо сейчас"),
     ]
     await bot.set_my_commands(commands)
 
@@ -46,6 +47,7 @@ async def main():
 
     # Register routers
     dp.include_router(start.router)
+    dp.include_router(now.router)
     dp.include_router(feeding.router)
     dp.include_router(sleep.router)
     dp.include_router(diaper.router)

@@ -80,6 +80,15 @@ async def feeding_started(callback: types.CallbackQuery, session: AsyncSession):
 async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
     active_session = await get_active_feeding_session(session, FAMILY_USER_ID)
 
+    # Debug logging
+    import logging
+    logging.info(
+        f"Looking for active feeding session for user {FAMILY_USER_ID}")
+    logging.info(f"Active session found: {active_session}")
+    if active_session:
+        logging.info(
+            f"Session started_at: {active_session.started_at}, ended_at: {active_session.ended_at}")
+
     if not active_session:
         await callback.answer("⚠️ Нет активной сессии кормления! Сначала нажмите 'Начать кормление'.", show_alert=True)
         return
@@ -110,13 +119,22 @@ async def feeding_ended(callback: types.CallbackQuery, session: AsyncSession):
     completed_feedings = [f for f in today_feedings if f.ended_at is not None]
     count = len(completed_feedings)
 
-    await callback.message.edit_text(
-        f"✅ Кормление завершено в {format_time(active_session.ended_at)}\n"
-        f"⏱️ Длительность: {format_duration(duration)}\n\n"
-        f"📊 Сегодня:\n"
-        f"• Кормлений: {count}",
-        reply_markup=get_feeding_menu()
-    )
+    try:
+        await callback.message.edit_text(
+            f"✅ Кормление завершено в {format_time(active_session.ended_at)}\n"
+            f"⏱️ Длительность: {format_duration(duration)}\n\n"
+            f"📊 Сегодня:\n"
+            f"• Кормлений: {count}",
+            reply_markup=get_feeding_menu()
+        )
+    except Exception:
+        await callback.message.answer(
+            f"✅ Кормление завершено в {format_time(active_session.ended_at)}\n"
+            f"⏱️ Длительность: {format_duration(duration)}\n\n"
+            f"📊 Сегодня:\n"
+            f"• Кормлений: {count}",
+            reply_markup=get_feeding_menu()
+        )
     await callback.answer()
 
 

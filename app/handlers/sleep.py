@@ -113,14 +113,24 @@ async def sleep_ended(callback: types.CallbackQuery, session: AsyncSession):
         if s.ended_at is not None
     )
 
-    await callback.message.edit_text(
-        f"☀️ Ребенок проснулся в {format_time(active_session.ended_at)}\n"
-        f"⏱️ Длительность сна: {format_duration(duration)}\n\n"
-        f"📊 Сегодня:\n"
-        f"• Периодов сна: {len([s for s in today_sessions if s.ended_at])}\n"
-        f"• Общее время сна: {format_duration(total_duration)}",
-        reply_markup=get_sleep_menu()
-    )
+    try:
+        await callback.message.edit_text(
+            f"☀️ Ребенок проснулся в {format_time(active_session.ended_at)}\n"
+            f"⏱️ Длительность сна: {format_duration(duration)}\n\n"
+            f"📊 Сегодня:\n"
+            f"• Периодов сна: {len([s for s in today_sessions if s.ended_at])}\n"
+            f"• Общее время сна: {format_duration(total_duration)}",
+            reply_markup=get_sleep_menu()
+        )
+    except Exception:
+        await callback.message.answer(
+            f"☀️ Ребенок проснулся в {format_time(active_session.ended_at)}\n"
+            f"⏱️ Длительность сна: {format_duration(duration)}\n\n"
+            f"📊 Сегодня:\n"
+            f"• Периодов сна: {len([s for s in today_sessions if s.ended_at])}\n"
+            f"• Общее время сна: {format_duration(total_duration)}",
+            reply_markup=get_sleep_menu()
+        )
     await callback.answer()
 
 

@@ -2,11 +2,12 @@ from aiogram import Router, types, F
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta
+from pytz import timezone
+from app.config import FAMILY_USER_ID, TIMEZONE
 from app.keyboards import get_diaper_menu, get_main_menu
 from app.models import Diaper, Event
 from app.services.stats import get_diapers, get_last_diaper
 from app.services.formatters import format_time
-from app.config import FAMILY_USER_ID
 
 router = Router()
 
@@ -48,7 +49,7 @@ async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
     diaper = Diaper(
         user_id=FAMILY_USER_ID,
         diaper_type=diaper_type,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(diaper)
     await session.flush()
@@ -57,14 +58,15 @@ async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
         user_id=FAMILY_USER_ID,
         event_type="diaper",
         record_id=diaper.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone(TIMEZONE))
     )
     session.add(event)
     await session.commit()
 
     # Get today's diaper stats
-    today_start = datetime.utcnow().replace(
-        hour=0, minute=0, second=0, microsecond=0)
+    tz_local = timezone(TIMEZONE)
+    now = datetime.now(tz_local)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     today_diapers = await get_diapers(session, FAMILY_USER_ID, today_start, today_end)
     wet_count = sum(
@@ -78,14 +80,24 @@ async def process_diaper(callback: types.CallbackQuery, session: AsyncSession):
         "both": "💧💩 Мокрый + грязный"
     }
 
-    await callback.message.edit_text(
-        f"✅ Записано: {type_text[diaper_type]} в {format_time(diaper.created_at)}\n\n"
-        f"📊 Сегодня:\n"
-        f"• Мокрых: {wet_count}\n"
-        f"• Грязных: {dirty_count}\n"
-        f"• Всего: {len(today_diapers)}",
-        reply_markup=get_diaper_menu()
-    )
+    try:
+        await callback.message.edit_text(
+            f"✅ Записано: {type_text[diaper_type]} в {format_time(diaper.created_at)}\n\n"
+            f"📊 Сегодня:\n"
+            f"• Мокрых: {wet_count}\n"
+            f"• Грязных: {dirty_count}\n"
+            f"• Всего: {len(today_diapers)}",
+            reply_markup=get_diaper_menu()
+        )
+    except Exception:
+        await callback.message.answer(
+            f"✅ Записано: {type_text[diaper_type]} в {format_time(diaper.created_at)}\n\n"
+            f"📊 Сегодня:\n"
+            f"• Мокрых: {wet_count}\n"
+            f"• Грязных: {dirty_count}\n"
+            f"• Всего: {len(today_diapers)}",
+            reply_markup=get_diaper_menu()
+        )
     await callback.answer()
 
 
@@ -110,7 +122,8 @@ async def delete_last_diaper(callback: types.CallbackQuery, session: AsyncSessio
         return
 
     # Check if event is older than 24 hours
-    if (datetime.utcnow() - last_event.created_at).total_seconds() > 86400:
+    now_local = datetime.now(timezone(TIMEZONE))
+    if (now_local - last_event.created_at).total_seconds() > 86400:
         await callback.answer("❌ Можно удалять только записи за последние 24 часа", show_alert=True)
         return
 
@@ -130,12 +143,20 @@ async def delete_last_diaper(callback: types.CallbackQuery, session: AsyncSessio
         await session.delete(last_event)
         await session.commit()
 
-        await callback.message.edit_text(
-            f"❌ Запись о подгузнике удалена:\n\n"
-            f"Тип: {type_text[diaper.diaper_type]}\n"
-            f"Время: {format_time(diaper.created_at)}",
-            reply_markup=get_diaper_menu()
-        )
+        try:
+            await callback.message.edit_text(
+                f"❌ Запись о подгузнике удалена:\n\n"
+                f"Тип: {type_text[diaper.diaper_type]}\n"
+                f"Время: {format_time(diaper.created_at)}",
+                reply_markup=get_diaper_menu()
+            )
+        except Exception:
+            await callback.message.answer(
+                f"❌ Запись о подгузнике удалена:\n\n"
+                f"Тип: {type_text[diaper.diaper_type]}\n"
+                f"Время: {format_time(diaper.created_at)}",
+                reply_markup=get_diaper_menu()
+            )
     else:
         await callback.answer("❌ Запись не найдена", show_alert=True)
 

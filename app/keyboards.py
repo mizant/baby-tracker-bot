@@ -13,6 +13,9 @@ def get_main_menu() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
+        ],
+        [
+            InlineKeyboardButton(text="👶 Сейчас", callback_data="now")
         ]
     ])
     return keyboard
