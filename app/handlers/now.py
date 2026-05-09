@@ -51,16 +51,23 @@ async def build_status_message(session: AsyncSession, now: datetime) -> str:
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=now.tzinfo)
 
-        feeding_duration = (now - started_at).total_seconds()
-        feeding_minutes = int(feeding_duration // 60)
-        feeding_hours = feeding_minutes // 60
-        feeding_mins = feeding_minutes % 60
-
-        if feeding_hours > 0:
-            message += f"🍼 <b>Кормление:</b> {feeding_hours} ч {feeding_mins} мин назад\n"
+        # Check if the feeding session is recent (within last 24 hours)
+        feeding_age = (now - started_at).total_seconds()
+        if feeding_age > 86400:  # More than 24 hours old
+            # Treat as not actively feeding
+            active_feeding = None
         else:
-            message += f"🍼 <b>Кормление:</b> {feeding_mins} мин назад\n"
-    else:
+            feeding_duration = (now - started_at).total_seconds()
+            feeding_minutes = int(feeding_duration // 60)
+            feeding_hours = feeding_minutes // 60
+            feeding_mins = feeding_minutes % 60
+
+            if feeding_hours > 0:
+                message += f"🍼 <b>Кормление:</b> {feeding_hours} ч {feeding_mins} мин назад\n"
+            else:
+                message += f"🍼 <b>Кормление:</b> {feeding_mins} мин назад\n"
+
+    if not active_feeding:
         last_feeding = await get_last_feeding(session, FAMILY_USER_ID)
         if last_feeding:
             # If feeding has end time, use that, otherwise use start time
@@ -89,16 +96,23 @@ async def build_status_message(session: AsyncSession, now: datetime) -> str:
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=now.tzinfo)
 
-        sleep_duration = (now - started_at).total_seconds()
-        sleep_minutes = int(sleep_duration // 60)
-        sleep_hours = sleep_minutes // 60
-        sleep_mins = sleep_minutes % 60
-
-        if sleep_hours > 0:
-            message += f"😴 <b>Спит уже:</b> {sleep_hours} ч {sleep_mins} мин\n"
+        # Check if the sleep session is recent (within last 24 hours)
+        sleep_age = (now - started_at).total_seconds()
+        if sleep_age > 86400:  # More than 24 hours old
+            # Treat as not actively sleeping
+            active_sleep = None
         else:
-            message += f"😴 <b>Спит уже:</b> {sleep_mins} мин\n"
-    else:
+            sleep_duration = (now - started_at).total_seconds()
+            sleep_minutes = int(sleep_duration // 60)
+            sleep_hours = sleep_minutes // 60
+            sleep_mins = sleep_minutes % 60
+
+            if sleep_hours > 0:
+                message += f"😴 <b>Спит уже:</b> {sleep_hours} ч {sleep_mins} мин\n"
+            else:
+                message += f"😴 <b>Спит уже:</b> {sleep_mins} мин\n"
+
+    if not active_sleep:
         last_sleep = await get_last_sleep(session, FAMILY_USER_ID)
         if last_sleep:
             sleep_time = last_sleep.ended_at if last_sleep.ended_at else last_sleep.started_at

@@ -119,8 +119,8 @@ async def build_stats_message(session, user_id, start_date, end_date, period_nam
 async def show_today_stats(callback: types.CallbackQuery, session: AsyncSession):
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
-    start_date = now.replace(hour=0, minute=0, second=0,
-                             microsecond=0).astimezone(pytz.utc)
+    # Use local time (naive) for comparison since DB stores local time
+    start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = start_date + timedelta(days=1)
 
     date_str = now.strftime("%d.%m.%Y")
@@ -140,10 +140,10 @@ async def show_today_stats(callback: types.CallbackQuery, session: AsyncSession)
 async def show_yesterday_stats(callback: types.CallbackQuery, session: AsyncSession):
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
+    # Use local time (naive) for comparison since DB stores local time
     yesterday_start = (now - timedelta(days=1)).replace(hour=0,
-                                                        minute=0, second=0, microsecond=0).astimezone(pytz.utc)
-    yesterday_end = now.replace(
-        hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+                                                        minute=0, second=0, microsecond=0)
+    yesterday_end = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     yesterday_date = (now - timedelta(days=1)).strftime("%d.%m.%Y")
     period_name = f"Вчера ({yesterday_date})"
@@ -162,10 +162,11 @@ async def show_yesterday_stats(callback: types.CallbackQuery, session: AsyncSess
 async def show_week_stats(callback: types.CallbackQuery, session: AsyncSession):
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
+    # Use local time (naive) for comparison since DB stores local time
     week_start = (now - timedelta(days=7)).replace(hour=0,
-                                                   minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+                                                   minute=0, second=0, microsecond=0)
 
-    message = await build_stats_message(session, FAMILY_USER_ID, week_start, now.astimezone(pytz.utc), "За неделю", detailed=False)
+    message = await build_stats_message(session, FAMILY_USER_ID, week_start, now, "За неделю", detailed=False)
 
     await callback.message.edit_text(
         message,
@@ -179,10 +180,11 @@ async def show_week_stats(callback: types.CallbackQuery, session: AsyncSession):
 async def show_month_stats(callback: types.CallbackQuery, session: AsyncSession):
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
+    # Use local time (naive) for comparison since DB stores local time
     month_start = (now - timedelta(days=30)).replace(hour=0,
-                                                     minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+                                                     minute=0, second=0, microsecond=0)
 
-    message = await build_stats_message(session, FAMILY_USER_ID, month_start, now.astimezone(pytz.utc), "За месяц", detailed=False)
+    message = await build_stats_message(session, FAMILY_USER_ID, month_start, now, "За месяц", detailed=False)
 
     await callback.message.edit_text(
         message,
@@ -197,14 +199,27 @@ async def show_feeding_today(callback: types.CallbackQuery, session: AsyncSessio
     """Show today feeding stats only"""
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
-    start_date = now.replace(hour=0, minute=0, second=0,
-                             microsecond=0).astimezone(pytz.utc)
+    # Use local time (naive) for comparison since DB stores local time
+    start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = start_date + timedelta(days=1)
 
     date_str = now.strftime("%d.%m.%Y")
 
+    # Debug logging
+    import logging
+    logging.info(f"=== FEEDING STATS TODAY ===")
+    logging.info(f"Now: {now}")
+    logging.info(f"Start date: {start_date}")
+    logging.info(f"End date: {end_date}")
+
     # Get only feeding data
     feedings = await get_feedings(session, FAMILY_USER_ID, start_date, end_date)
+
+    logging.info(f"Found {len(feedings)} feedings")
+    for f in feedings:
+        logging.info(
+            f"  Feeding: started_at={f.started_at}, ended_at={f.ended_at}")
+
     feeding_count = len([f for f in feedings if f.ended_at is not None])
 
     message = f"🍼 <b>Кормления - Сегодня ({date_str})</b>\n\n"
@@ -234,8 +249,8 @@ async def show_sleep_today(callback: types.CallbackQuery, session: AsyncSession)
     """Show today sleep stats only"""
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
-    start_date = now.replace(hour=0, minute=0, second=0,
-                             microsecond=0).astimezone(pytz.utc)
+    # Use local time (naive) for comparison since DB stores local time
+    start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = start_date + timedelta(days=1)
 
     date_str = now.strftime("%d.%m.%Y")
@@ -276,8 +291,8 @@ async def show_diaper_today(callback: types.CallbackQuery, session: AsyncSession
     """Show today diaper stats only"""
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
-    start_date = now.replace(hour=0, minute=0, second=0,
-                             microsecond=0).astimezone(pytz.utc)
+    # Use local time (naive) for comparison since DB stores local time
+    start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = start_date + timedelta(days=1)
 
     date_str = now.strftime("%d.%m.%Y")
